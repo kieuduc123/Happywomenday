@@ -19,6 +19,7 @@ import {
   loadGiftConfigFromFirebase,
   saveGiftConfigToFirebase,
 } from './firebase-gifts'
+import { isCloudinaryEnabled, uploadDataUrlToCloudinary, uploadFileToCloudinary } from './cloudinary'
 import { getPresetFromPath } from './presets'
 import './edit-page.css'
 
@@ -123,11 +124,78 @@ export default function EditPage() {
     type: '',
   })
   const firebaseEnabled = useMemo(() => isFirebaseEnabled(), [])
+  const cloudinaryEnabled = useMemo(() => isCloudinaryEnabled(), [])
 
   const previewImages = useMemo(() => toImageList(config.flyingImages.join('\n')), [config.flyingImages])
 
   const setField = <K extends keyof GiftConfig>(field: K, value: GiftConfig[K]) => {
     setConfig((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const uploadInlineAssetsToCloudinary = async (slugValue: string, source: GiftConfig): Promise<GiftConfig | null> => {
+    const next: GiftConfig = {
+      ...source,
+      flyingImages: [...source.flyingImages],
+      photoCompliments: [...source.photoCompliments],
+    }
+
+    const uploadOne = async (value: string, kind: 'images' | 'music'): Promise<string | null> => {
+      if (!value.startsWith('data:')) {
+        return value
+      }
+
+      return uploadDataUrlToCloudinary(value, { slug: slugValue, kind })
+    }
+
+    const musicUploaded = await uploadOne(next.musicUrl, 'music')
+    if (next.musicUrl.startsWith('data:') && !musicUploaded) {
+      return null
+    }
+    if (musicUploaded) {
+      next.musicUrl = musicUploaded
+    }
+
+    const bouquetUploaded = await uploadOne(next.bouquetImage, 'images')
+    if (next.bouquetImage.startsWith('data:') && !bouquetUploaded) {
+      return null
+    }
+    if (bouquetUploaded) {
+      next.bouquetImage = bouquetUploaded
+    }
+
+    const leftUploaded = await uploadOne(next.rabbitLeftImage, 'images')
+    if (next.rabbitLeftImage.startsWith('data:') && !leftUploaded) {
+      return null
+    }
+    if (leftUploaded) {
+      next.rabbitLeftImage = leftUploaded
+    }
+
+    const rightUploaded = await uploadOne(next.rabbitRightImage, 'images')
+    if (next.rabbitRightImage.startsWith('data:') && !rightUploaded) {
+      return null
+    }
+    if (rightUploaded) {
+      next.rabbitRightImage = rightUploaded
+    }
+
+    for (let i = 0; i < next.flyingImages.length; i += 1) {
+      const item = next.flyingImages[i]
+
+      if (!item.startsWith('data:')) {
+        continue
+      }
+
+      const uploaded = await uploadDataUrlToCloudinary(item, { slug: slugValue, kind: 'images' })
+
+      if (!uploaded) {
+        return null
+      }
+
+      next.flyingImages[i] = uploaded
+    }
+
+    return next
   }
 
   const applySlugContext = async (value: string) => {
@@ -168,10 +236,31 @@ export default function EditPage() {
       return
     }
 
+    const normalizedSlug = toSlug(slug)
+
     try {
+      if (cloudinaryEnabled) {
+        setStatus({ message: 'Đang upload nhạc lên Cloudinary...', type: 'ok' })
+        const uploadedUrl = await uploadFileToCloudinary(file, {
+          slug: normalizedSlug || undefined,
+          kind: 'music',
+        })
+
+        if (uploadedUrl) {
+          setField('musicUrl', uploadedUrl)
+          setStatus({ message: 'Đã upload nhạc cloud, nhớ bấm Lưu.', type: 'ok' })
+          return
+        }
+      }
+
       const dataUrl = await readAsDataUrl(file)
       setField('musicUrl', dataUrl)
-      setStatus({ message: 'Đã nạp nhạc, nhớ bấm Lưu.', type: 'ok' })
+      setStatus({
+        message: !cloudinaryEnabled
+          ? 'Đã nạp nhạc local, nhớ bấm Lưu.'
+          : 'Upload cloud lỗi, đã fallback sang local data URL. Nhớ bấm Lưu.',
+        type: cloudinaryEnabled ? 'error' : 'ok',
+      })
     } catch {
       setStatus({ message: 'Không đọc được file nhạc.', type: 'error' })
     }
@@ -184,37 +273,105 @@ export default function EditPage() {
       return
     }
 
+    const normalizedSlug = toSlug(slug)
+
     try {
+      if (cloudinaryEnabled) {
+        setStatus({ message: 'Đang upload ảnh lên Cloudinary...', type: 'ok' })
+        const uploadedUrls: string[] = []
+
+        for (const file of files) {
+          // eslint-disable-next-line no-await-in-loop
+          const uploaded = await uploadFileToCloudinary(file, {
+            slug: normalizedSlug || undefined,
+            kind: 'images',
+          })
+
+          if (!uploaded) {
+            throw new Error('Upload image failed')
+          }
+
+          uploadedUrls.push(uploaded)
+        }
+
+        setConfig((prev) => ({
+          ...prev,
+          flyingImages: uploadedUrls,
+        }))
+        setStatus({ message: `Đã upload ${uploadedUrls.length} ảnh cloud, nhớ bấm Lưu.`, type: 'ok' })
+        return
+      }
+
       const urls = await Promise.all(files.map((file) => readAsDataUrl(file)))
-      const merged = [...config.flyingImages, ...urls]
-      setField('flyingImages', merged)
-      setStatus({ message: 'Đã nạp ảnh, nhớ bấm Lưu.', type: 'ok' })
+      setConfig((prev) => ({
+        ...prev,
+        flyingImages: urls,
+      }))
+      setStatus({
+        message: !cloudinaryEnabled
+          ? `Đã nạp ${urls.length} ảnh local, nhớ bấm Lưu.`
+          : 'Upload cloud lỗi, đã fallback sang ảnh local data URL. Nhớ bấm Lưu.',
+        type: cloudinaryEnabled ? 'error' : 'ok',
+      })
     } catch {
-      setStatus({ message: 'Không đọc được ảnh.', type: 'error' })
+      setStatus({ message: 'Không upload/đọc được ảnh.', type: 'error' })
     }
   }
 
-  const buildCleanConfig = (): GiftConfig => ({
-    introText: config.introText.trim() || DEFAULT_GIFT_CONFIG.introText,
-    letterTitle: config.letterTitle.trim() || DEFAULT_GIFT_CONFIG.letterTitle,
-    letterContent: config.letterContent.trim() || DEFAULT_GIFT_CONFIG.letterContent,
-    letterSignature: config.letterSignature.trim() || DEFAULT_GIFT_CONFIG.letterSignature,
-    musicUrl: config.musicUrl.trim(),
-    bouquetImage: config.bouquetImage.trim() || DEFAULT_GIFT_CONFIG.bouquetImage,
-    rabbitLeftImage: config.rabbitLeftImage.trim() || DEFAULT_GIFT_CONFIG.rabbitLeftImage,
-    rabbitRightImage: config.rabbitRightImage.trim() || DEFAULT_GIFT_CONFIG.rabbitRightImage,
-    flyingImages: config.flyingImages.length > 0 ? config.flyingImages : [config.bouquetImage.trim() || DEFAULT_GIFT_CONFIG.bouquetImage],
-    photoCompliments:
-      config.photoCompliments.length > 0 ? config.photoCompliments : [...DEFAULT_GIFT_CONFIG.photoCompliments],
-  })
+  const buildCleanConfig = (): GiftConfig => {
+    const trimmedFlyingImages = config.flyingImages.map((item) => item.trim()).filter((item) => item.length > 0)
+    const fallbackImage = config.bouquetImage.trim() || DEFAULT_GIFT_CONFIG.bouquetImage
+    const normalizedFlyingImages = trimmedFlyingImages.length > 0 ? trimmedFlyingImages : [fallbackImage]
+    const normalizedBouquetImage = config.bouquetImage.trim() || normalizedFlyingImages[0] || DEFAULT_GIFT_CONFIG.bouquetImage
+
+    return {
+      introText: config.introText.trim() || DEFAULT_GIFT_CONFIG.introText,
+      letterTitle: config.letterTitle.trim() || DEFAULT_GIFT_CONFIG.letterTitle,
+      letterContent: config.letterContent.trim() || DEFAULT_GIFT_CONFIG.letterContent,
+      letterSignature: config.letterSignature.trim() || DEFAULT_GIFT_CONFIG.letterSignature,
+      musicUrl: config.musicUrl.trim(),
+      bouquetImage: normalizedBouquetImage,
+      rabbitLeftImage: config.rabbitLeftImage.trim() || DEFAULT_GIFT_CONFIG.rabbitLeftImage,
+      rabbitRightImage: config.rabbitRightImage.trim() || DEFAULT_GIFT_CONFIG.rabbitRightImage,
+      flyingImages: normalizedFlyingImages,
+      photoCompliments:
+        config.photoCompliments.length > 0 ? config.photoCompliments : [...DEFAULT_GIFT_CONFIG.photoCompliments],
+    }
+  }
+
+  const buildTokenShareLink = (cleaned: GiftConfig, slugValue: string): string => {
+    const normalizedSlug = toSlug(slugValue)
+    const base = getBaseConfigForSlug(normalizedSlug)
+    const patch = buildGiftConfigPatch(cleaned, base)
+    const token = encodeGiftConfigToToken(patch)
+    const path = normalizedSlug ? `/${normalizedSlug}` : '/'
+    const url = new URL(path, window.location.origin)
+    url.searchParams.set('g', token)
+    return url.toString()
+  }
 
   const handleSave = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     const normalizedSlug = toSlug(slug)
-    const cleaned = buildCleanConfig()
+    let cleaned = buildCleanConfig()
 
     if (normalizedSlug) {
+      if (cloudinaryEnabled && hasInlineDataUrls(cleaned)) {
+        setStatus({ message: 'Đang chuyển ảnh/nhạc local lên Cloudinary...', type: 'ok' })
+        const uploadedConfig = await uploadInlineAssetsToCloudinary(normalizedSlug, cleaned)
+
+        if (!uploadedConfig) {
+          setStatus({
+            message: 'Có file local chưa upload được lên cloud. Hãy thử upload lại ảnh/nhạc rồi lưu.',
+            type: 'error',
+          })
+          return
+        }
+
+        cleaned = uploadedConfig
+      }
+
       saveGiftConfigBySlug(normalizedSlug, cleaned)
 
       if (firebaseEnabled) {
@@ -233,11 +390,17 @@ export default function EditPage() {
     persistLastEditSlug(normalizedSlug)
     setSlug(normalizedSlug)
     setConfig(cleaned)
+    if (normalizedSlug && firebaseEnabled) {
+      const url = new URL(`/${normalizedSlug}`, window.location.origin).toString()
+      setShareLink(url)
+    } else {
+      setShareLink(buildTokenShareLink(cleaned, normalizedSlug))
+    }
     setStatus({
       message: normalizedSlug
         ? firebaseEnabled
           ? `Đã lưu cloud cho /${normalizedSlug}. Gửi link ngắn /${normalizedSlug} được rồi.`
-          : `Đã lưu local. Gửi link /${normalizedSlug} chỉ ổn trên máy đã lưu.`
+          : `Đã lưu Cloudinary-only. Hãy gửi link có ?g= trong ô bên dưới để máy nào cũng mở đúng ảnh.`
         : 'Đã lưu. Mở trang / để xem thay đổi.',
       type: 'ok',
     })
@@ -246,13 +409,7 @@ export default function EditPage() {
   const handleBuildShareLink = () => {
     const cleaned = buildCleanConfig()
     const normalizedSlug = toSlug(slug)
-    const base = getBaseConfigForSlug(normalizedSlug)
-    const patch = buildGiftConfigPatch(cleaned, base)
-    const token = encodeGiftConfigToToken(patch)
-    const path = normalizedSlug ? `/${normalizedSlug}` : '/'
-    const url = new URL(path, window.location.origin)
-    url.searchParams.set('g', token)
-    const link = url.toString()
+    const link = buildTokenShareLink(cleaned, normalizedSlug)
     setShareLink(link)
 
     if (hasInlineDataUrls(cleaned)) {
@@ -288,6 +445,29 @@ export default function EditPage() {
       setStatus({ message: 'Đã copy link chia sẻ.', type: 'ok' })
     } catch {
       setStatus({ message: 'Không copy được tự động, hãy copy thủ công ở ô link.', type: 'error' })
+    }
+  }
+
+  const handleCopySlugLink = async () => {
+    const normalizedSlug = toSlug(slug)
+
+    if (!normalizedSlug) {
+      setStatus({ message: 'Nhập slug trước khi copy link.', type: 'error' })
+      return
+    }
+
+    const cleaned = buildCleanConfig()
+    const link = firebaseEnabled
+      ? new URL(`/${normalizedSlug}`, window.location.origin).toString()
+      : buildTokenShareLink(cleaned, normalizedSlug)
+
+    try {
+      await navigator.clipboard.writeText(link)
+      setShareLink(link)
+      setStatus({ message: `Đã copy link ${link}`, type: 'ok' })
+    } catch {
+      setShareLink(link)
+      setStatus({ message: 'Không copy được tự động, đã điền link vào ô để copy tay.', type: 'error' })
     }
   }
 
@@ -348,13 +528,23 @@ export default function EditPage() {
           <a href={linkPath} className="edit-btn">
             Mở {linkPath}
           </a>
+          <button type="button" className="edit-btn" onClick={handleCopySlugLink}>
+            Copy link /slug
+          </button>
         </div>
 
         <p className="edit-note">
           Firebase: <strong>{firebaseEnabled ? 'ON' : 'OFF'}</strong>.{' '}
           {firebaseEnabled
             ? 'Đang lưu online theo slug, gửi link /ten là máy khác mở đúng.'
-            : 'Chưa cấu hình Firebase, hiện chỉ lưu local/folder.'}
+            : 'Không dùng Firebase: gửi link có ?g= để máy khác mở đúng ảnh.'}
+        </p>
+
+        <p className="edit-note">
+          Cloudinary: <strong>{cloudinaryEnabled ? 'ON' : 'OFF'}</strong>.{' '}
+          {cloudinaryEnabled
+            ? 'Upload ảnh/nhạc trong form sẽ đẩy lên Cloudinary, rồi lưu URL vào Firestore.'
+            : 'Chưa cấu hình Cloudinary nên upload chỉ lưu local (data URL).'}
         </p>
 
         <p className="edit-note">
