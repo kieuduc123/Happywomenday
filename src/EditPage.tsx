@@ -336,7 +336,7 @@ export default function EditPage() {
     const trimmedFlyingImages = config.flyingImages.map((item) => item.trim()).filter((item) => item.length > 0)
     const fallbackImage = config.bouquetImage.trim() || DEFAULT_GIFT_CONFIG.bouquetImage
     const normalizedFlyingImages = trimmedFlyingImages.length > 0 ? trimmedFlyingImages : [fallbackImage]
-    const normalizedBouquetImage = config.bouquetImage.trim() || normalizedFlyingImages[0] || DEFAULT_GIFT_CONFIG.bouquetImage
+    const normalizedBouquetImage = config.bouquetImage.trim() || DEFAULT_GIFT_CONFIG.bouquetImage
 
     return {
       introText: config.introText.trim() || DEFAULT_GIFT_CONFIG.introText,

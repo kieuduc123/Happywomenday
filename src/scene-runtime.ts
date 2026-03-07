@@ -428,7 +428,6 @@ async function loadFolderPatchBySlug(slug: string): Promise<Partial<GiftConfig> 
       introText: `Happy Women's Day ${displayName}`,
       letterTitle: `Gửi ${displayName}`,
       flyingImages: bundledImages,
-      bouquetImage: bundledImages[0],
     }
   }
 
@@ -450,7 +449,6 @@ async function loadFolderPatchBySlug(slug: string): Promise<Partial<GiftConfig> 
     introText: `Happy Women's Day ${displayName}`,
     letterTitle: `Gửi ${displayName}`,
     flyingImages: images,
-    bouquetImage: images[0],
   }
 }
 
