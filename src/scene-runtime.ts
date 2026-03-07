@@ -250,11 +250,29 @@ function toFolderAssetUrl(folderPath: string, value: string): string {
   return `${folderPath}/${normalized}`
 }
 
+function isImageLikeResponse(response: Response): boolean {
+  const contentType = response.headers.get('content-type')?.toLowerCase().trim() ?? ''
+
+  if (!contentType) {
+    return true
+  }
+
+  if (contentType.startsWith('image/')) {
+    return true
+  }
+
+  if (contentType.includes('application/octet-stream')) {
+    return true
+  }
+
+  return false
+}
+
 async function checkAssetExists(url: string): Promise<boolean> {
   try {
     const head = await fetch(url, { method: 'HEAD', cache: 'no-store' })
 
-    if (head.ok) {
+    if (head.ok && isImageLikeResponse(head)) {
       return true
     }
   } catch {
@@ -263,7 +281,7 @@ async function checkAssetExists(url: string): Promise<boolean> {
 
   try {
     const get = await fetch(url, { cache: 'no-store' })
-    return get.ok
+    return get.ok && isImageLikeResponse(get)
   } catch {
     return false
   }
