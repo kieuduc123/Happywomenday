@@ -13,6 +13,12 @@ import {
   toSlug,
   type GiftConfig,
 } from './config'
+import {
+  clearGiftConfigFromFirebase,
+  isFirebaseEnabled,
+  loadGiftConfigFromFirebase,
+  saveGiftConfigToFirebase,
+} from './firebase-gifts'
 import { getPresetFromPath } from './presets'
 import './edit-page.css'
 
@@ -116,6 +122,7 @@ export default function EditPage() {
     message: '',
     type: '',
   })
+  const firebaseEnabled = useMemo(() => isFirebaseEnabled(), [])
 
   const previewImages = useMemo(() => toImageList(config.flyingImages.join('\n')), [config.flyingImages])
 
@@ -123,15 +130,33 @@ export default function EditPage() {
     setConfig((prev) => ({ ...prev, [field]: value }))
   }
 
-  const applySlugContext = (value: string) => {
+  const applySlugContext = async (value: string) => {
     const nextSlug = toSlug(value)
     setSlug(nextSlug)
     const nextConfig = loadConfigForSlug(nextSlug)
     setConfig(nextConfig)
     setShareLink('')
     persistLastEditSlug(nextSlug)
+
+    if (nextSlug && firebaseEnabled) {
+      const cloudConfig = await loadGiftConfigFromFirebase(nextSlug)
+
+      if (cloudConfig) {
+        setConfig(cloudConfig)
+        setStatus({
+          message: `Đã nạp cấu hình cloud cho /${nextSlug}.`,
+          type: 'ok',
+        })
+        return
+      }
+    }
+
     setStatus({
-      message: nextSlug ? `Đã chuyển sang cấu hình /${nextSlug}.` : 'Đã chuyển sang cấu hình mặc định (/).',
+      message: nextSlug
+        ? firebaseEnabled
+          ? `Không có dữ liệu cloud cho /${nextSlug}, đang dùng local/preset.`
+          : `Đã chuyển sang cấu hình /${nextSlug}.`
+        : 'Đã chuyển sang cấu hình mặc định (/).',
       type: 'ok',
     })
   }
@@ -183,7 +208,7 @@ export default function EditPage() {
       config.photoCompliments.length > 0 ? config.photoCompliments : [...DEFAULT_GIFT_CONFIG.photoCompliments],
   })
 
-  const handleSave = (event: FormEvent<HTMLFormElement>) => {
+  const handleSave = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     const normalizedSlug = toSlug(slug)
@@ -191,6 +216,16 @@ export default function EditPage() {
 
     if (normalizedSlug) {
       saveGiftConfigBySlug(normalizedSlug, cleaned)
+
+      if (firebaseEnabled) {
+        const saved = await saveGiftConfigToFirebase(normalizedSlug, cleaned)
+        if (!saved) {
+          setStatus({ message: `Đã lưu local /${normalizedSlug}, nhưng chưa lưu được lên Firebase.`, type: 'error' })
+          setSlug(normalizedSlug)
+          setConfig(cleaned)
+          return
+        }
+      }
     } else {
       saveGiftConfig(cleaned)
     }
@@ -199,7 +234,11 @@ export default function EditPage() {
     setSlug(normalizedSlug)
     setConfig(cleaned)
     setStatus({
-      message: normalizedSlug ? `Đã lưu. Gửi link /${normalizedSlug} để mở đúng bộ ảnh đó.` : 'Đã lưu. Mở trang / để xem thay đổi.',
+      message: normalizedSlug
+        ? firebaseEnabled
+          ? `Đã lưu cloud cho /${normalizedSlug}. Gửi link ngắn /${normalizedSlug} được rồi.`
+          : `Đã lưu local. Gửi link /${normalizedSlug} chỉ ổn trên máy đã lưu.`
+        : 'Đã lưu. Mở trang / để xem thay đổi.',
       type: 'ok',
     })
   }
@@ -252,15 +291,24 @@ export default function EditPage() {
     }
   }
 
-  const handleReset = () => {
+  const handleReset = async () => {
     const normalizedSlug = toSlug(slug)
 
     if (normalizedSlug) {
+      if (firebaseEnabled) {
+        await clearGiftConfigFromFirebase(normalizedSlug)
+      }
+
       clearGiftConfigBySlug(normalizedSlug)
       const base = getBaseConfigForSlug(normalizedSlug)
       setConfig(base)
       setShareLink('')
-      setStatus({ message: `Đã xóa cấu hình /${normalizedSlug}. Link đó vẫn mở được với giao diện mặc định/preset.`, type: 'ok' })
+      setStatus({
+        message: firebaseEnabled
+          ? `Đã xóa local + cloud cho /${normalizedSlug}.`
+          : `Đã xóa cấu hình /${normalizedSlug}. Link đó vẫn mở được với giao diện mặc định/preset.`,
+        type: 'ok',
+      })
       return
     }
 
@@ -288,13 +336,26 @@ export default function EditPage() {
         </label>
 
         <div className="edit-slug-actions">
-          <button type="button" className="edit-btn" onClick={() => applySlugContext(slug)}>
+          <button
+            type="button"
+            className="edit-btn"
+            onClick={() => {
+              void applySlugContext(slug)
+            }}
+          >
             Nạp theo tên
           </button>
           <a href={linkPath} className="edit-btn">
             Mở {linkPath}
           </a>
         </div>
+
+        <p className="edit-note">
+          Firebase: <strong>{firebaseEnabled ? 'ON' : 'OFF'}</strong>.{' '}
+          {firebaseEnabled
+            ? 'Đang lưu online theo slug, gửi link /ten là máy khác mở đúng.'
+            : 'Chưa cấu hình Firebase, hiện chỉ lưu local/folder.'}
+        </p>
 
         <p className="edit-note">
           Cách gọn nhất không cần DB: upload ảnh vào <code>{`public/gifts/${slug || 'hongnhung'}/`}</code> theo tên{' '}

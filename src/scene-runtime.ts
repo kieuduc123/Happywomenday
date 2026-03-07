@@ -13,6 +13,7 @@ import {
   saveGiftConfigBySlug,
   type GiftConfig,
 } from './config'
+import { clearGiftConfigFromFirebase, isFirebaseEnabled, loadGiftConfigFromFirebase, saveGiftConfigToFirebase } from './firebase-gifts'
 import { getPresetFromPath } from './presets'
 
 type LetterData = {
@@ -206,6 +207,10 @@ config = {
 
 function saveActiveConfig(value: GiftConfig): void {
   if (activeSlug) {
+    if (isFirebaseEnabled()) {
+      void saveGiftConfigToFirebase(activeSlug, value)
+    }
+
     saveGiftConfigBySlug(activeSlug, value)
     return
   }
@@ -215,6 +220,10 @@ function saveActiveConfig(value: GiftConfig): void {
 
 function clearActiveConfig(): void {
   if (activeSlug) {
+    if (isFirebaseEnabled()) {
+      void clearGiftConfigFromFirebase(activeSlug)
+    }
+
     clearGiftConfigBySlug(activeSlug)
     return
   }
@@ -377,20 +386,32 @@ async function loadFolderPatchBySlug(slug: string): Promise<Partial<GiftConfig> 
   }
 }
 
-async function hydrateConfigFromFolder(): Promise<void> {
+async function hydrateConfigFromRemoteSources(): Promise<void> {
   if (!activeSlug) {
     return
   }
 
-  const folderPatch = await loadFolderPatchBySlug(activeSlug)
+  let remotePatch: Partial<GiftConfig> | null = null
 
-  if (!folderPatch) {
+  if (isFirebaseEnabled()) {
+    const cloudConfig = await loadGiftConfigFromFirebase(activeSlug)
+
+    if (cloudConfig) {
+      remotePatch = cloudConfig
+    }
+  }
+
+  if (!remotePatch) {
+    remotePatch = await loadFolderPatchBySlug(activeSlug)
+  }
+
+  if (!remotePatch) {
     return
   }
 
   config = {
     ...config,
-    ...folderPatch,
+    ...remotePatch,
     ...urlOverrides,
   }
 
@@ -1226,7 +1247,7 @@ createParticles()
 setupImageViewer()
 setupAdminPanel()
 setupGlobalAutoPlayOnInteraction()
-void hydrateConfigFromFolder()
+void hydrateConfigFromRemoteSources()
 
 btnDaHieu?.addEventListener('click', () => {
   playAudio(true)
