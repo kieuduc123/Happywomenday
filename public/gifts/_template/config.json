@@ -1,0 +1,16 @@
+{
+  "introText": "Happy Women's Day Hong Nhung",
+  "letterTitle": "Gui Hong Nhung",
+  "letterContent": "Chuc em ngay 8/3 that vui va luon rang ro.",
+  "letterSignature": "Nguoi thuong em",
+  "musicUrl": "music.mp3",
+  "bouquetImage": "bouquet.jpg",
+  "rabbitLeftImage": "left.gif",
+  "rabbitRightImage": "right.gif",
+  "flyingImages": ["1.jpg", "2.jpg", "3.jpg"],
+  "photoCompliments": [
+    "Em la dieu dep nhat hom nay.",
+    "Nu cuoi cua em lam anh vui ca ngay.",
+    "Cam on em vi luon rat dang yeu."
+  ]
+}
