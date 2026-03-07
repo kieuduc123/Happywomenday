@@ -98,8 +98,30 @@ let imageViewerFlipLock = false
 let imageViewerFlipMidTimer: number | null = null
 let imageViewerFlipEndTimer: number | null = null
 const IMAGE_FLIP_DURATION_MS = 520
-const FOLDER_GIFTS_ROOT = '/gifts'
+const STATIC_FOLDER_ROOTS = ['/assets', '/assets/gifts', '/gifts']
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif']
+const BUNDLED_STATIC_IMAGES = import.meta.glob('./assets/*/*.{jpg,JPG,jpeg,JPEG,png,PNG,webp,WEBP,gif,GIF,avif,AVIF}', {
+  eager: true,
+  import: 'default',
+}) as Record<string, string>
+
+function buildExtensionCandidates(ext: string): string[] {
+  const upper = ext.toUpperCase()
+  return upper === ext ? [ext] : [ext, upper]
+}
+
+function loadBundledImagesBySlug(slug: string): string[] {
+  if (!slug) {
+    return []
+  }
+
+  const prefix = `./assets/${slug}/`
+
+  return Object.entries(BUNDLED_STATIC_IMAGES)
+    .filter(([key]) => key.startsWith(prefix))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, url]) => url)
+}
 
 function getMusicCandidates(value: string): string[] {
   return value
@@ -312,71 +334,102 @@ async function checkAssetExists(url: string): Promise<boolean> {
 }
 
 async function loadFolderPatchFromConfigJson(slug: string): Promise<Partial<GiftConfig> | null> {
-  const folderPath = `${FOLDER_GIFTS_ROOT}/${encodeURIComponent(slug)}`
-  const configUrl = `${folderPath}/config.json`
+  for (const root of STATIC_FOLDER_ROOTS) {
+    const folderPath = `${root}/${encodeURIComponent(slug)}`
+    const configUrl = `${folderPath}/config.json`
 
-  try {
-    const response = await fetch(configUrl, { cache: 'no-store' })
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const response = await fetch(configUrl, { cache: 'no-store' })
 
-    if (!response.ok) {
-      return null
+      if (!response.ok) {
+        continue
+      }
+
+      // eslint-disable-next-line no-await-in-loop
+      const parsed = await response.json()
+      const patch = normalizeGiftConfigPatch(parsed)
+      const resolved: Partial<GiftConfig> = { ...patch }
+
+      if (resolved.musicUrl) resolved.musicUrl = toFolderAssetUrl(folderPath, resolved.musicUrl)
+      if (resolved.bouquetImage) resolved.bouquetImage = toFolderAssetUrl(folderPath, resolved.bouquetImage)
+      if (resolved.rabbitLeftImage) resolved.rabbitLeftImage = toFolderAssetUrl(folderPath, resolved.rabbitLeftImage)
+      if (resolved.rabbitRightImage) resolved.rabbitRightImage = toFolderAssetUrl(folderPath, resolved.rabbitRightImage)
+      if (resolved.flyingImages) resolved.flyingImages = resolved.flyingImages.map((item) => toFolderAssetUrl(folderPath, item))
+
+      return resolved
+    } catch {
+      // Try next root.
     }
-
-    const parsed = await response.json()
-    const patch = normalizeGiftConfigPatch(parsed)
-    const resolved: Partial<GiftConfig> = { ...patch }
-
-    if (resolved.musicUrl) resolved.musicUrl = toFolderAssetUrl(folderPath, resolved.musicUrl)
-    if (resolved.bouquetImage) resolved.bouquetImage = toFolderAssetUrl(folderPath, resolved.bouquetImage)
-    if (resolved.rabbitLeftImage) resolved.rabbitLeftImage = toFolderAssetUrl(folderPath, resolved.rabbitLeftImage)
-    if (resolved.rabbitRightImage) resolved.rabbitRightImage = toFolderAssetUrl(folderPath, resolved.rabbitRightImage)
-    if (resolved.flyingImages) resolved.flyingImages = resolved.flyingImages.map((item) => toFolderAssetUrl(folderPath, item))
-
-    return resolved
-  } catch {
-    return null
   }
+
+  return null
 }
 
 async function probeSequentialFolderImages(slug: string, maxCount = 40): Promise<string[]> {
-  const folderPath = `${FOLDER_GIFTS_ROOT}/${encodeURIComponent(slug)}`
-  const urls: string[] = []
-  let missesInRow = 0
+  for (const root of STATIC_FOLDER_ROOTS) {
+    const folderPath = `${root}/${encodeURIComponent(slug)}`
+    const urls: string[] = []
+    let missesInRow = 0
 
-  for (let i = 1; i <= maxCount; i += 1) {
-    let found = ''
+    for (let i = 1; i <= maxCount; i += 1) {
+      let found = ''
 
-    for (const ext of IMAGE_EXTENSIONS) {
-      const url = `${folderPath}/${i}.${ext}`
+      for (const ext of IMAGE_EXTENSIONS) {
+        for (const candidateExt of buildExtensionCandidates(ext)) {
+          const url = `${folderPath}/${i}.${candidateExt}`
 
-      // eslint-disable-next-line no-await-in-loop
-      const exists = await checkAssetExists(url)
+          // eslint-disable-next-line no-await-in-loop
+          const exists = await checkAssetExists(url)
 
-      if (exists) {
-        found = url
+          if (exists) {
+            found = url
+            break
+          }
+        }
+
+        if (found) {
+          break
+        }
+      }
+
+      if (found) {
+        urls.push(found)
+        missesInRow = 0
+        continue
+      }
+
+      missesInRow += 1
+
+      if (urls.length > 0 && missesInRow >= 3) {
         break
       }
     }
 
-    if (found) {
-      urls.push(found)
-      missesInRow = 0
-      continue
-    }
-
-    missesInRow += 1
-
-    if (urls.length > 0 && missesInRow >= 3) {
-      break
+    if (urls.length > 0) {
+      return urls
     }
   }
 
-  return urls
+  return []
 }
 
 async function loadFolderPatchBySlug(slug: string): Promise<Partial<GiftConfig> | null> {
   if (!slug) {
     return null
+  }
+
+  const bundledImages = loadBundledImagesBySlug(slug)
+
+  if (bundledImages.length > 0) {
+    const displayName = slugToDisplayName(slug)
+
+    return {
+      introText: `Happy Women's Day ${displayName}`,
+      letterTitle: `Gửi ${displayName}`,
+      flyingImages: bundledImages,
+      bouquetImage: bundledImages[0],
+    }
   }
 
   const jsonPatch = await loadFolderPatchFromConfigJson(slug)
@@ -411,18 +464,16 @@ async function hydrateConfigFromRemoteSources(): Promise<void> {
     return
   }
 
-  let remotePatch: Partial<GiftConfig> | null = null
+  // Static by slug is the primary source.
+  // This keeps /tinh, /linhchi, /hongnhung deterministic from bundled/public assets.
+  let remotePatch: Partial<GiftConfig> | null = await loadFolderPatchBySlug(activeSlug)
 
-  if (isFirebaseEnabled()) {
+  // Legacy fallback: Firebase only when no static folder found.
+  if (!remotePatch && isFirebaseEnabled()) {
     const cloudConfig = await loadGiftConfigFromFirebase(activeSlug)
-
     if (cloudConfig) {
       remotePatch = cloudConfig
     }
-  }
-
-  if (!remotePatch) {
-    remotePatch = await loadFolderPatchBySlug(activeSlug)
   }
 
   if (!remotePatch) {

@@ -20,6 +20,7 @@ import {
   saveGiftConfigToFirebase,
 } from './firebase-gifts'
 import { isCloudinaryEnabled, uploadDataUrlToCloudinary, uploadFileToCloudinary } from './cloudinary'
+import { loadGiftConfigFromCloudinary, saveGiftConfigToCloudinary } from './cloudinary-gifts'
 import { getPresetFromPath } from './presets'
 import './edit-page.css'
 
@@ -219,6 +220,19 @@ export default function EditPage() {
       }
     }
 
+    if (nextSlug && cloudinaryEnabled) {
+      const cloudinaryConfig = await loadGiftConfigFromCloudinary(nextSlug)
+
+      if (cloudinaryConfig) {
+        setConfig(cloudinaryConfig)
+        setStatus({
+          message: `Đã nạp cấu hình Cloudinary cho /${nextSlug}.`,
+          type: 'ok',
+        })
+        return
+      }
+    }
+
     setStatus({
       message: nextSlug
         ? firebaseEnabled
@@ -356,6 +370,7 @@ export default function EditPage() {
     const normalizedSlug = toSlug(slug)
     let cleaned = buildCleanConfig()
     let firebaseSaved = false
+    let cloudinaryConfigSaved = false
 
     if (normalizedSlug) {
       if (cloudinaryEnabled && hasInlineDataUrls(cleaned)) {
@@ -375,6 +390,10 @@ export default function EditPage() {
 
       saveGiftConfigBySlug(normalizedSlug, cleaned)
 
+      if (cloudinaryEnabled) {
+        cloudinaryConfigSaved = await saveGiftConfigToCloudinary(normalizedSlug, cleaned)
+      }
+
       if (firebaseEnabled) {
         firebaseSaved = await saveGiftConfigToFirebase(normalizedSlug, cleaned)
       }
@@ -386,14 +405,26 @@ export default function EditPage() {
     setSlug(normalizedSlug)
     setConfig(cleaned)
     const tokenLink = buildTokenShareLink(cleaned, normalizedSlug)
-    setShareLink(tokenLink)
+    const shortSlugLink = normalizedSlug ? new URL(`/${normalizedSlug}`, window.location.origin).toString() : ''
+    const resolvedShareLink =
+      normalizedSlug && cloudinaryEnabled && cloudinaryConfigSaved ? shortSlugLink : tokenLink
+
+    setShareLink(resolvedShareLink)
     setStatus({
       message: normalizedSlug
-        ? firebaseEnabled
-          ? firebaseSaved
-            ? `Đã lưu /${normalizedSlug}. Hãy gửi link có ?g= để máy nào cũng mở đúng ảnh.`
-            : `Firebase chưa lưu được, nhưng link ?g= vẫn dùng tốt trên mọi máy.`
-          : `Đã lưu Cloudinary-only. Hãy gửi link có ?g= trong ô bên dưới để máy nào cũng mở đúng ảnh.`
+        ? cloudinaryEnabled
+          ? cloudinaryConfigSaved
+            ? `Đã lưu /${normalizedSlug} lên Cloudinary. Gửi link ngắn /${normalizedSlug} là máy nào cũng mở đúng ảnh.`
+            : firebaseEnabled
+              ? firebaseSaved
+                ? `Cloudinary lưu chưa được, nhưng Firebase đã lưu /${normalizedSlug}.`
+                : `Cloudinary/Firebase đều chưa lưu online. Tạm thời dùng link ?g=.`
+              : `Cloudinary lưu chưa được, tạm thời dùng link ?g=.`
+          : firebaseEnabled
+            ? firebaseSaved
+              ? `Đã lưu /${normalizedSlug} trên Firebase.`
+              : `Firebase chưa lưu được, nhưng link ?g= vẫn dùng tốt trên mọi máy.`
+            : `Đã lưu local. Gửi link ?g= trong ô bên dưới để máy khác mở đúng ảnh.`
         : 'Đã lưu. Mở trang / để xem thay đổi.',
       type: 'ok',
     })
@@ -402,8 +433,19 @@ export default function EditPage() {
   const handleBuildShareLink = () => {
     const cleaned = buildCleanConfig()
     const normalizedSlug = toSlug(slug)
-    const link = buildTokenShareLink(cleaned, normalizedSlug)
+    const link =
+      normalizedSlug && cloudinaryEnabled
+        ? new URL(`/${normalizedSlug}`, window.location.origin).toString()
+        : buildTokenShareLink(cleaned, normalizedSlug)
     setShareLink(link)
+
+    if (normalizedSlug && cloudinaryEnabled) {
+      setStatus({
+        message: 'Cloudinary ON: link ngắn theo slug. Nhớ bấm Lưu trước khi gửi.',
+        type: 'ok',
+      })
+      return
+    }
 
     if (hasInlineDataUrls(cleaned)) {
       setStatus({
@@ -450,7 +492,10 @@ export default function EditPage() {
     }
 
     const cleaned = buildCleanConfig()
-    const link = buildTokenShareLink(cleaned, normalizedSlug)
+    const link =
+      normalizedSlug && cloudinaryEnabled
+        ? new URL(`/${normalizedSlug}`, window.location.origin).toString()
+        : buildTokenShareLink(cleaned, normalizedSlug)
 
     try {
       await navigator.clipboard.writeText(link)
@@ -534,13 +579,14 @@ export default function EditPage() {
         <p className="edit-note">
           Cloudinary: <strong>{cloudinaryEnabled ? 'ON' : 'OFF'}</strong>.{' '}
           {cloudinaryEnabled
-            ? 'Upload ảnh/nhạc trong form sẽ đẩy lên Cloudinary, rồi lưu URL vào Firestore.'
+            ? 'Upload ảnh/nhạc trong form sẽ đẩy lên Cloudinary, và khi bấm Lưu sẽ ghi config theo slug lên Cloudinary.'
             : 'Chưa cấu hình Cloudinary nên upload chỉ lưu local (data URL).'}
         </p>
 
         <p className="edit-note">
-          Cách gọn nhất không cần DB: upload ảnh vào <code>{`public/gifts/${slug || 'hongnhung'}/`}</code> theo tên{' '}
-          <code>1.jpg, 2.jpg...</code>. Vào link <code>{slug ? `/${slug}` : '/hongnhung'}</code> sẽ tự lấy đúng bộ ảnh đó.
+          Static folder theo tên người: đặt ảnh vào <code>{`public/assets/${slug || 'hongnhung'}/`}</code> (hoặc{' '}
+          <code>{`public/assets/gifts/${slug || 'hongnhung'}/`}</code>) theo tên <code>1.jpg, 2.jpg...</code>. Vào link{' '}
+          <code>{slug ? `/${slug}` : '/hongnhung'}</code> sẽ tự lấy đúng bộ ảnh đó.
         </p>
 
         <div className="edit-slug-actions">
