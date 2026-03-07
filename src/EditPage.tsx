@@ -355,6 +355,7 @@ export default function EditPage() {
 
     const normalizedSlug = toSlug(slug)
     let cleaned = buildCleanConfig()
+    let firebaseSaved = false
 
     if (normalizedSlug) {
       if (cloudinaryEnabled && hasInlineDataUrls(cleaned)) {
@@ -375,13 +376,7 @@ export default function EditPage() {
       saveGiftConfigBySlug(normalizedSlug, cleaned)
 
       if (firebaseEnabled) {
-        const saved = await saveGiftConfigToFirebase(normalizedSlug, cleaned)
-        if (!saved) {
-          setStatus({ message: `Đã lưu local /${normalizedSlug}, nhưng chưa lưu được lên Firebase.`, type: 'error' })
-          setSlug(normalizedSlug)
-          setConfig(cleaned)
-          return
-        }
+        firebaseSaved = await saveGiftConfigToFirebase(normalizedSlug, cleaned)
       }
     } else {
       saveGiftConfig(cleaned)
@@ -390,16 +385,14 @@ export default function EditPage() {
     persistLastEditSlug(normalizedSlug)
     setSlug(normalizedSlug)
     setConfig(cleaned)
-    if (normalizedSlug && firebaseEnabled) {
-      const url = new URL(`/${normalizedSlug}`, window.location.origin).toString()
-      setShareLink(url)
-    } else {
-      setShareLink(buildTokenShareLink(cleaned, normalizedSlug))
-    }
+    const tokenLink = buildTokenShareLink(cleaned, normalizedSlug)
+    setShareLink(tokenLink)
     setStatus({
       message: normalizedSlug
         ? firebaseEnabled
-          ? `Đã lưu cloud cho /${normalizedSlug}. Gửi link ngắn /${normalizedSlug} được rồi.`
+          ? firebaseSaved
+            ? `Đã lưu /${normalizedSlug}. Hãy gửi link có ?g= để máy nào cũng mở đúng ảnh.`
+            : `Firebase chưa lưu được, nhưng link ?g= vẫn dùng tốt trên mọi máy.`
           : `Đã lưu Cloudinary-only. Hãy gửi link có ?g= trong ô bên dưới để máy nào cũng mở đúng ảnh.`
         : 'Đã lưu. Mở trang / để xem thay đổi.',
       type: 'ok',
@@ -457,9 +450,7 @@ export default function EditPage() {
     }
 
     const cleaned = buildCleanConfig()
-    const link = firebaseEnabled
-      ? new URL(`/${normalizedSlug}`, window.location.origin).toString()
-      : buildTokenShareLink(cleaned, normalizedSlug)
+    const link = buildTokenShareLink(cleaned, normalizedSlug)
 
     try {
       await navigator.clipboard.writeText(link)
@@ -529,7 +520,7 @@ export default function EditPage() {
             Mở {linkPath}
           </a>
           <button type="button" className="edit-btn" onClick={handleCopySlugLink}>
-            Copy link /slug
+            Copy link gửi đi
           </button>
         </div>
 
