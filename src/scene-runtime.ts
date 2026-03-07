@@ -205,6 +205,21 @@ config = {
   ...urlOverrides,
 }
 
+function hasMeaningfulUrlOverrides(overrides: Partial<GiftConfig>): boolean {
+  return (
+    typeof overrides.introText === 'string' ||
+    typeof overrides.letterTitle === 'string' ||
+    typeof overrides.letterContent === 'string' ||
+    typeof overrides.letterSignature === 'string' ||
+    typeof overrides.musicUrl === 'string' ||
+    typeof overrides.bouquetImage === 'string' ||
+    typeof overrides.rabbitLeftImage === 'string' ||
+    typeof overrides.rabbitRightImage === 'string' ||
+    Array.isArray(overrides.flyingImages) ||
+    Array.isArray(overrides.photoCompliments)
+  )
+}
+
 function saveActiveConfig(value: GiftConfig): void {
   if (activeSlug) {
     if (isFirebaseEnabled()) {
@@ -388,6 +403,11 @@ async function loadFolderPatchBySlug(slug: string): Promise<Partial<GiftConfig> 
 
 async function hydrateConfigFromRemoteSources(): Promise<void> {
   if (!activeSlug) {
+    return
+  }
+
+  // If URL already provides full/partial payload (e.g. ?g=...), skip remote probing to avoid noisy requests.
+  if (hasMeaningfulUrlOverrides(urlOverrides)) {
     return
   }
 
