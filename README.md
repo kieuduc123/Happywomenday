@@ -1,4 +1,4 @@
-# Happywomenday
+# Thiệp chúc mừng Ngày Phụ nữ Việt Nam 20/10
 
 ## Firebase nhanh
 
@@ -23,4 +23,6 @@ service cloud.firestore {
 
 5. Chay lai `npm run dev` hoac deploy.
 
-Khi Firebase ON + Cloudinary ON, trang `/edit` se luu online theo `slug`, gui link `/hongnhung` la may khac mo dung du lieu.
+Khi Firebase ON + Cloudinary ON, trang `/edit` se luu online theo `slug`, gui link theo ten nguoi nhan de chia se.
+
+Duong dan `/tinh` luon dung bo loi chuc `Nguoi yeu`. Moi duong dan theo ten khac luon dung bo loi chuc `Ban than`.

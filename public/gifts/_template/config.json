@@ -1,16 +1,19 @@
 {
-  "introText": "Happy Women's Day Hong Nhung",
-  "letterTitle": "Gui Hong Nhung",
-  "letterContent": "Chuc em ngay 8/3 that vui va luon rang ro.",
-  "letterSignature": "Nguoi thuong em",
+  "recipientType": "best-friend",
+  "introText": "20/10 vui ve nha, co ban than!",
+  "letterTitle": "Gui co ban than",
+  "letterContent": "20/10 vui ve nha. Chuc ba luc nao cung xinh, vui va gap nhieu chuyen de chiu.",
+  "letterSignature": "Ban than cua ba",
   "musicUrl": "music.mp3",
   "bouquetImage": "bouquet.jpg",
   "rabbitLeftImage": "left.gif",
   "rabbitRightImage": "right.gif",
   "flyingImages": ["1.jpg", "2.jpg", "3.jpg"],
   "photoCompliments": [
-    "Em la dieu dep nhat hom nay.",
-    "Nu cuoi cua em lam anh vui ca ngay.",
-    "Cam on em vi luon rat dang yeu."
+    "20/10 vui ve nha, bot suy nghi linh tinh va cuoi nhieu len.",
+    "Chuc ba luc nao cung xinh, vui va gap toan chuyen de chiu.",
+    "Binh thuong hay choc ba thoi, chu that ra cung quy ba nhieu.",
+    "Mong ba gap dung nguoi hop gu; neu gu giong tui thi cang tien.",
+    "Neu chua chot ai dong hanh thi tui dang ky."
   ]
 }

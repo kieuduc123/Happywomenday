@@ -80,7 +80,7 @@ export const SCENE_HTML = String.raw`
       <div class="particles"></div>
 
       <div class="intro" id="intro">
-        <p class="intro__text">Happy Women's Day 8/3</p>
+        <p class="intro__text">Chúc mừng Ngày Phụ nữ Việt Nam 20/10</p>
       </div>
 
       <div class="shooting-stars">
@@ -366,7 +366,7 @@ export const SCENE_HTML = String.raw`
       <section class="admin-panel__sheet" role="dialog" aria-modal="true" aria-labelledby="adminTitle">
         <button class="admin-panel__close" id="adminClose" type="button" aria-label="Đóng phần sửa">×</button>
         <h2 id="adminTitle">Phần sửa nội dung</h2>
-        <p class="admin-panel__hint">Bảng này ẩn với người dùng. Mở nhanh bằng tổ hợp Ctrl + Shift + E.</p>
+        <p class="admin-panel__hint">Bảng này ẩn với người dùng. /tinh dùng lời chúc người yêu; các đường dẫn khác dùng lời chúc bạn thân.</p>
         <form class="admin-form" id="adminForm">
           <label>
             <span>Intro text</span>

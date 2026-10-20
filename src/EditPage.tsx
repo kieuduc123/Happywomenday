@@ -1,11 +1,13 @@
 import { useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
 import {
-  DEFAULT_GIFT_CONFIG,
   SONG_LIBRARY,
+  applyRecipientTemplateForSlug,
   buildGiftConfigPatch,
   clearGiftConfig,
   clearGiftConfigBySlug,
   encodeGiftConfigToToken,
+  getGiftTemplate,
+  getRecipientTypeForSlug,
   loadGiftConfig,
   loadGiftConfigBySlug,
   saveGiftConfig,
@@ -21,7 +23,6 @@ import {
 } from './firebase-gifts'
 import { isCloudinaryEnabled, uploadDataUrlToCloudinary, uploadFileToCloudinary } from './cloudinary'
 import { loadGiftConfigFromCloudinary, saveGiftConfigToCloudinary } from './cloudinary-gifts'
-import { getPresetFromPath } from './presets'
 import './edit-page.css'
 
 type StatusType = 'ok' | 'error' | ''
@@ -77,20 +78,12 @@ function getInitialSlug(): string {
 }
 
 function getBaseConfigForSlug(slug: string): GiftConfig {
-  const preset = slug ? getPresetFromPath(`/${slug}`) : null
-
-  return {
-    ...DEFAULT_GIFT_CONFIG,
-    ...(preset ?? {}),
-  }
+  return getGiftTemplate(getRecipientTypeForSlug(slug))
 }
 
 function loadConfigForSlug(slug: string): GiftConfig {
-  if (!slug) {
-    return loadGiftConfig()
-  }
-
-  return loadGiftConfigBySlug(slug) ?? getBaseConfigForSlug(slug)
+  const loaded = slug ? loadGiftConfigBySlug(slug) : loadGiftConfig()
+  return applyRecipientTemplateForSlug(loaded ?? getBaseConfigForSlug(slug), slug)
 }
 
 function persistLastEditSlug(slug: string): void {
@@ -131,6 +124,13 @@ export default function EditPage() {
 
   const setField = <K extends keyof GiftConfig>(field: K, value: GiftConfig[K]) => {
     setConfig((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleSlugChange = (value: string) => {
+    const nextSlug = toSlug(value)
+    setSlug(nextSlug)
+    setConfig((prev) => applyRecipientTemplateForSlug(prev, nextSlug))
+    setShareLink('')
   }
 
   const uploadInlineAssetsToCloudinary = async (slugValue: string, source: GiftConfig): Promise<GiftConfig | null> => {
@@ -211,7 +211,7 @@ export default function EditPage() {
       const cloudConfig = await loadGiftConfigFromFirebase(nextSlug)
 
       if (cloudConfig) {
-        setConfig(cloudConfig)
+        setConfig(applyRecipientTemplateForSlug(cloudConfig, nextSlug))
         setStatus({
           message: `Đã nạp cấu hình cloud cho /${nextSlug}.`,
           type: 'ok',
@@ -224,7 +224,7 @@ export default function EditPage() {
       const cloudinaryConfig = await loadGiftConfigFromCloudinary(nextSlug)
 
       if (cloudinaryConfig) {
-        setConfig(cloudinaryConfig)
+        setConfig(applyRecipientTemplateForSlug(cloudinaryConfig, nextSlug))
         setStatus({
           message: `Đã nạp cấu hình Cloudinary cho /${nextSlug}.`,
           type: 'ok',
@@ -333,23 +333,25 @@ export default function EditPage() {
   }
 
   const buildCleanConfig = (): GiftConfig => {
-    const trimmedFlyingImages = config.flyingImages.map((item) => item.trim()).filter((item) => item.length > 0)
-    const fallbackImage = config.bouquetImage.trim() || DEFAULT_GIFT_CONFIG.bouquetImage
+    const source = applyRecipientTemplateForSlug(config, slug)
+    const template = getGiftTemplate(source.recipientType)
+    const trimmedFlyingImages = source.flyingImages.map((item) => item.trim()).filter((item) => item.length > 0)
+    const fallbackImage = source.bouquetImage.trim() || template.bouquetImage
     const normalizedFlyingImages = trimmedFlyingImages.length > 0 ? trimmedFlyingImages : [fallbackImage]
-    const normalizedBouquetImage = config.bouquetImage.trim() || DEFAULT_GIFT_CONFIG.bouquetImage
+    const normalizedBouquetImage = source.bouquetImage.trim() || template.bouquetImage
 
     return {
-      introText: config.introText.trim() || DEFAULT_GIFT_CONFIG.introText,
-      letterTitle: config.letterTitle.trim() || DEFAULT_GIFT_CONFIG.letterTitle,
-      letterContent: config.letterContent.trim() || DEFAULT_GIFT_CONFIG.letterContent,
-      letterSignature: config.letterSignature.trim() || DEFAULT_GIFT_CONFIG.letterSignature,
-      musicUrl: config.musicUrl.trim(),
+      recipientType: source.recipientType,
+      introText: source.introText.trim() || template.introText,
+      letterTitle: source.letterTitle.trim() || template.letterTitle,
+      letterContent: source.letterContent.trim() || template.letterContent,
+      letterSignature: source.letterSignature.trim() || template.letterSignature,
+      musicUrl: source.musicUrl.trim(),
       bouquetImage: normalizedBouquetImage,
-      rabbitLeftImage: config.rabbitLeftImage.trim() || DEFAULT_GIFT_CONFIG.rabbitLeftImage,
-      rabbitRightImage: config.rabbitRightImage.trim() || DEFAULT_GIFT_CONFIG.rabbitRightImage,
+      rabbitLeftImage: source.rabbitLeftImage.trim() || template.rabbitLeftImage,
+      rabbitRightImage: source.rabbitRightImage.trim() || template.rabbitRightImage,
       flyingImages: normalizedFlyingImages,
-      photoCompliments:
-        config.photoCompliments.length > 0 ? config.photoCompliments : [...DEFAULT_GIFT_CONFIG.photoCompliments],
+      photoCompliments: source.photoCompliments.length > 0 ? source.photoCompliments : [...template.photoCompliments],
     }
   }
 
@@ -529,17 +531,18 @@ export default function EditPage() {
     }
 
     clearGiftConfig()
-    setConfig({ ...DEFAULT_GIFT_CONFIG })
+    setConfig(getGiftTemplate('lover'))
     setShareLink('')
     setStatus({ message: 'Đã reset về mặc định (/).', type: 'ok' })
   }
 
   const linkPath = slug ? `/${slug}` : '/'
+  const recipientType = getRecipientTypeForSlug(slug)
 
   return (
     <main className="edit-page">
       <header className="edit-page__header">
-        <h1>Chỉnh sửa thiệp 8/3</h1>
+        <h1>Chỉnh sửa thiệp 20/10</h1>
         <a href="/" className="edit-page__back">
           Xem thiệp
         </a>
@@ -547,9 +550,14 @@ export default function EditPage() {
 
       <form className="edit-form" onSubmit={handleSave}>
         <label>
-          <span>Tên link người nhận (slug). Ví dụ: hongnhung, trang</span>
-          <input value={slug} onChange={(e) => setSlug(toSlug(e.target.value))} placeholder="hongnhung" />
+          <span>Tên link người nhận (slug). Ví dụ: trang</span>
+          <input value={slug} onChange={(e) => handleSlugChange(e.target.value)} placeholder="trang" />
         </label>
+
+        <p className="edit-note">
+          Bộ lời chúc: <strong>{recipientType === 'lover' ? 'Người yêu' : 'Bạn thân mập mờ'}</strong>.{' '}
+          <code>/tinh</code> dành cho người yêu; mọi đường dẫn khác dành cho bạn thân.
+        </p>
 
         <div className="edit-slug-actions">
           <button
@@ -584,9 +592,9 @@ export default function EditPage() {
         </p>
 
         <p className="edit-note">
-          Static folder theo tên người: đặt ảnh vào <code>{`public/assets/${slug || 'hongnhung'}/`}</code> (hoặc{' '}
-          <code>{`public/assets/gifts/${slug || 'hongnhung'}/`}</code>) theo tên <code>1.jpg, 2.jpg...</code>. Vào link{' '}
-          <code>{slug ? `/${slug}` : '/hongnhung'}</code> sẽ tự lấy đúng bộ ảnh đó.
+          Static folder theo tên người: đặt ảnh vào <code>{`public/assets/${slug || 'trang'}/`}</code> (hoặc{' '}
+          <code>{`public/assets/gifts/${slug || 'trang'}/`}</code>) theo tên <code>1.jpg, 2.jpg...</code>. Vào link{' '}
+          <code>{slug ? `/${slug}` : '/trang'}</code> sẽ tự lấy đúng bộ ảnh đó.
         </p>
 
         <div className="edit-slug-actions">
@@ -662,7 +670,10 @@ export default function EditPage() {
         </label>
 
         <label>
-          <span>Lời khen theo ảnh (mỗi dòng 1 câu). Nếu ít hơn số ảnh, hệ thống tự random thêm từ bộ 20+ câu.</span>
+          <span>
+            Lời khen theo ảnh (mỗi dòng 1 câu). Hệ thống chỉ random thêm từ bộ dành cho{' '}
+            {config.recipientType === 'best-friend' ? 'bạn thân' : 'người yêu'}.
+          </span>
           <textarea
             rows={5}
             value={config.photoCompliments.join('\n')}

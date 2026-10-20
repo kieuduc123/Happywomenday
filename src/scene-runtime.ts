@@ -1,11 +1,13 @@
 import './style.css'
 import {
-  DEFAULT_GIFT_CONFIG,
   SONG_LIBRARY,
+  applyRecipientTemplateForSlug,
   clearGiftConfig,
   clearGiftConfigBySlug,
   decodeGiftConfigFromToken,
+  getGiftTemplate,
   getPathSlug,
+  getRecipientTypeForSlug,
   loadGiftConfig,
   loadGiftConfigBySlug,
   normalizeGiftConfigPatch,
@@ -14,7 +16,6 @@ import {
   type GiftConfig,
 } from './config'
 import { clearGiftConfigFromFirebase, isFirebaseEnabled, loadGiftConfigFromFirebase, saveGiftConfigToFirebase } from './firebase-gifts'
-import { getPresetFromPath } from './presets'
 
 type LetterData = {
   title: string
@@ -54,14 +55,12 @@ const imageViewerClose = document.getElementById('imageViewerClose') as HTMLButt
 const imageBookSpread = document.getElementById('imageBookSpread')
 
 const activeSlug = getPathSlug(window.location.pathname)
-const presetConfig = getPresetFromPath(window.location.pathname) ?? {}
 const storedConfig = activeSlug ? loadGiftConfigBySlug(activeSlug) : loadGiftConfig()
 
-let config: GiftConfig = {
-  ...DEFAULT_GIFT_CONFIG,
-  ...presetConfig,
-  ...(storedConfig ?? {}),
-}
+let config: GiftConfig = applyRecipientTemplateForSlug(
+  storedConfig ?? getGiftTemplate(getRecipientTypeForSlug(activeSlug)),
+  activeSlug,
+)
 
 const inlineMusicSrc = audio?.getAttribute('src')?.trim() ?? ''
 if (!config.musicUrl && inlineMusicSrc.length > 0) {
@@ -222,13 +221,18 @@ function getUrlOverrides(): Partial<GiftConfig> {
 
 const urlOverrides = getUrlOverrides()
 
-config = {
-  ...config,
-  ...urlOverrides,
-}
+config = applyRecipientTemplateForSlug(
+  {
+    ...config,
+    ...urlOverrides,
+  },
+  activeSlug,
+)
 
 function hasMeaningfulUrlOverrides(overrides: Partial<GiftConfig>): boolean {
   return (
+    overrides.recipientType === 'lover' ||
+    overrides.recipientType === 'best-friend' ||
     typeof overrides.introText === 'string' ||
     typeof overrides.letterTitle === 'string' ||
     typeof overrides.letterContent === 'string' ||
@@ -425,7 +429,7 @@ async function loadFolderPatchBySlug(slug: string): Promise<Partial<GiftConfig> 
     const displayName = slugToDisplayName(slug)
 
     return {
-      introText: `Happy Women's Day ${displayName}`,
+      introText: `Chúc mừng 20/10, ${displayName}!`,
       letterTitle: `Gửi ${displayName}`,
       flyingImages: bundledImages,
     }
@@ -446,7 +450,7 @@ async function loadFolderPatchBySlug(slug: string): Promise<Partial<GiftConfig> 
   const displayName = slugToDisplayName(slug)
 
   return {
-    introText: `Happy Women's Day ${displayName}`,
+    introText: `Chúc mừng 20/10, ${displayName}!`,
     letterTitle: `Gửi ${displayName}`,
     flyingImages: images,
   }
@@ -463,7 +467,7 @@ async function hydrateConfigFromRemoteSources(): Promise<void> {
   }
 
   // Static by slug is the primary source.
-  // This keeps /tinh, /linhchi, /hongnhung deterministic from bundled/public assets.
+  // This keeps slugs with bundled/public assets deterministic.
   let remotePatch: Partial<GiftConfig> | null = await loadFolderPatchBySlug(activeSlug)
 
   // Legacy fallback: Firebase only when no static folder found.
@@ -478,11 +482,14 @@ async function hydrateConfigFromRemoteSources(): Promise<void> {
     return
   }
 
-  config = {
-    ...config,
-    ...remotePatch,
-    ...urlOverrides,
-  }
+  config = applyRecipientTemplateForSlug(
+    {
+      ...config,
+      ...remotePatch,
+      ...urlOverrides,
+    },
+    activeSlug,
+  )
 
   sessionMusicUrl = ''
   sessionMusicSeed = ''
@@ -934,7 +941,36 @@ function buildImageViewerItems(clickedSrc: string): string[] {
     unique.unshift(clickedSrc)
   }
 
-  return unique.length > 0 ? unique : [clickedSrc]
+  if (unique.length === 0) {
+    return clickedSrc ? [clickedSrc] : []
+  }
+
+  const defaultComplimentCount = getGiftTemplate(config.recipientType).photoCompliments.length
+  const targetCount = Math.max(unique.length, letterData.photoCompliments.length, defaultComplimentCount)
+  const deck: string[] = []
+
+  while (deck.length < targetCount) {
+    const shuffled = shuffleArray(unique) as string[]
+
+    if (deck.length > 0 && shuffled.length > 1 && shuffled[0] === deck[deck.length - 1]) {
+      const first = shuffled[0]
+      shuffled[0] = shuffled[1]
+      shuffled[1] = first
+    }
+
+    for (let i = 0; i < shuffled.length && deck.length < targetCount; i += 1) {
+      deck.push(shuffled[i])
+    }
+  }
+
+  const clickedIndex = clickedSrc ? deck.indexOf(clickedSrc) : -1
+  if (clickedIndex > 0) {
+    const first = deck[0]
+    deck[0] = deck[clickedIndex]
+    deck[clickedIndex] = first
+  }
+
+  return deck
 }
 
 function uniqueStrings(items: string[]): string[] {
@@ -947,7 +983,7 @@ function buildImageViewerComplimentDeck(total: number): string[] {
   }
 
   const customPool = uniqueStrings(letterData.photoCompliments)
-  const fallbackPool = uniqueStrings(DEFAULT_GIFT_CONFIG.photoCompliments)
+  const fallbackPool = uniqueStrings(getGiftTemplate(config.recipientType).photoCompliments)
 
   const mergedPool = [...customPool]
   fallbackPool.forEach((line) => {
@@ -1254,21 +1290,24 @@ function setupAdminPanel(): void {
   adminForm.addEventListener('submit', (event) => {
     event.preventDefault()
 
-    const bouquet = adminBouquetImage.value.trim() || DEFAULT_GIFT_CONFIG.bouquetImage
+    const recipientType = getRecipientTypeForSlug(activeSlug)
+    const template = getGiftTemplate(recipientType)
+    const bouquet = adminBouquetImage.value.trim() || template.bouquetImage
     const images = parseImageLines(adminFlyingImages.value)
     const compliments = parseTextLines(adminPhotoCompliments.value)
 
     config = {
-      introText: adminIntroText.value.trim() || DEFAULT_GIFT_CONFIG.introText,
-      letterTitle: adminLetterTitle.value.trim() || DEFAULT_GIFT_CONFIG.letterTitle,
-      letterContent: adminLetterContent.value.trim() || DEFAULT_GIFT_CONFIG.letterContent,
-      letterSignature: adminLetterSignature.value.trim() || DEFAULT_GIFT_CONFIG.letterSignature,
+      recipientType,
+      introText: adminIntroText.value.trim() || template.introText,
+      letterTitle: adminLetterTitle.value.trim() || template.letterTitle,
+      letterContent: adminLetterContent.value.trim() || template.letterContent,
+      letterSignature: adminLetterSignature.value.trim() || template.letterSignature,
       musicUrl: adminMusicUrl.value.trim(),
       bouquetImage: bouquet,
-      rabbitLeftImage: adminRabbitLeftImage.value.trim() || DEFAULT_GIFT_CONFIG.rabbitLeftImage,
-      rabbitRightImage: adminRabbitRightImage.value.trim() || DEFAULT_GIFT_CONFIG.rabbitRightImage,
+      rabbitLeftImage: adminRabbitLeftImage.value.trim() || template.rabbitLeftImage,
+      rabbitRightImage: adminRabbitRightImage.value.trim() || template.rabbitRightImage,
       flyingImages: images.length > 0 ? images : [bouquet],
-      photoCompliments: compliments.length > 0 ? compliments : [...DEFAULT_GIFT_CONFIG.photoCompliments],
+      photoCompliments: compliments.length > 0 ? compliments : [...template.photoCompliments],
     }
 
     sessionMusicUrl = ''
@@ -1281,10 +1320,7 @@ function setupAdminPanel(): void {
 
   adminReset.addEventListener('click', () => {
     clearActiveConfig()
-    config = {
-      ...DEFAULT_GIFT_CONFIG,
-      ...presetConfig,
-    }
+    config = getGiftTemplate(getRecipientTypeForSlug(activeSlug))
     sessionMusicUrl = ''
     sessionMusicSeed = ''
     syncLetterDataWithConfig()
