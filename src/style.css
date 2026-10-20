@@ -1373,8 +1373,8 @@
   .photo-float {
     position: absolute;
     bottom: -20%;
-    width: clamp(80px, 18vw, 150px);
-    max-height: 30vh;
+    width: fit-content;
+    max-width: clamp(80px, 18vw, 150px);
     border-radius: 4px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
     animation: photoFloatUp linear both;
@@ -1409,9 +1409,13 @@
     }
   }
   .photo-float img {
-    width: 100%;
+    width: auto;
     height: auto;
+    max-width: 100%;
+    max-height: 30vh;
     display: block;
+    border-radius: inherit;
+    object-fit: contain;
     pointer-events: auto;
   }
   @keyframes photoFloatUp {
@@ -1447,8 +1451,7 @@
   /* Mobile landscape: tăng max-height và width ảnh bay vì vh rất nhỏ */
   @media (max-height: 500px) and (orientation: landscape) {
     .photo-float {
-      width: clamp(90px, 22vw, 190px);
-      max-height: 55vh;
+      max-width: clamp(90px, 22vw, 190px);
     }
     .photo-float img {
       max-height: 55vh;
@@ -1457,11 +1460,10 @@
 
   @media (max-width: 768px) and (orientation: portrait) {
     .photo-float {
-      width: clamp(90px, 36vw, 200px);
-      max-height: 20vh;
+      max-width: clamp(90px, 36vw, 200px);
     }
     .photo-float img {
-      max-height: 20vh;
+      max-height: 28vh;
     }
     .ramo {
       width: 85vmin;

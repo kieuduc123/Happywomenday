@@ -893,9 +893,6 @@ function addFlyingBatch(): void {
     const img = document.createElement('img')
     img.src = nextUrl(urls)
     img.alt = 'Ảnh kỷ niệm'
-    img.style.width = '100%'
-    img.style.height = 'auto'
-    img.style.display = 'block'
     markZoomable(img)
 
     wrap.appendChild(img)
